@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+
+  
+  <title>opai.me</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta property="og:type" content="website">
+<meta property="og:title" content="opai.me">
+<meta property="og:url" content="https://opai.me/index.html">
+<meta property="og:site_name" content="opai.me">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="opai.me">
+  
+    <link rel="alternate" href="/atom.xml" title="opai.me" type="application/atom+xml">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">opai.me</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Suche"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="https://opai.me"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main">
+  
+    <article id="post-django数据库读写分离" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2017/11/30/django数据库读写分离/" class="article-date">
+  <time datetime="2017-11-30T13:24:37.000Z" itemprop="datePublished">2017-11-30</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2017/11/30/django数据库读写分离/">django mysql数据库读写分离</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <ul>
+<li>前提</li>
+</ul>
+<p>现在已经有了多个mysql数据库，并且<strong>已经实现了主从同步</strong></p>
+<ul>
+<li>问题</li>
+</ul>
+<p>由于历史原因，项目在开发的时候并没考虑多数据库读写分离的情况，代码部分的查询更新都是使用了默认的default数据，代码大致如下</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> <span class="keyword">not</span> Model.object.filter(pk=xx).exists():</span><br><span class="line">    Model.object.filter(xx=xx).update(yy=<span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+<p>此时如果要做读写分离，此时的exists等查询如果走了从库，由于并发or主从同步延迟，这个判断可能是错误的，导致了更新操作也是错误的</p>
+<ul>
+<li>需要解决的问题</li>
+</ul>
+<p>在不改原有代码的前提下，<strong>更新操作前的查询必须使用主库</strong>。<br>这里我们使用一个第三方库：<a href="https://github.com/jbalogh/django-multidb-router" target="_blank" rel="noopener">django-multidb-router</a></p>
+<ul>
+<li>使用方法</li>
+</ul>
+<p>1.django mysql数据库中分别配置好主从数据库<br><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">DATABASES = &#123;</span><br><span class="line">    <span class="string">'default'</span>: &#123;</span><br><span class="line">        <span class="string">'...'</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">'slave'</span>: &#123;</span><br><span class="line">        <span class="string">'...'</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">'slave2'</span>: &#123;</span><br><span class="line">        <span class="string">'...</span></span><br><span class="line"><span class="string">    &#125;</span></span><br><span class="line"><span class="string">&#125;</span></span><br></pre></td></tr></table></figure></p>
+<p>2.settings.py 的中插入该第三方库中间件, 置于第一个位置<br><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">MIDDLEWARE_CLASSES = (</span><br><span class="line">    <span class="string">'multidb.middleware.PinningRouterMiddleware'</span>,</span><br><span class="line">    <span class="string">'...'</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure></p>
+<p>3.setting.py 新增从库list<br><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SLAVE_DATABASES = [<span class="string">'salve'</span>, <span class="string">'slave2'</span>, <span class="string">'...'</span>]</span><br></pre></td></tr></table></figure></p>
+<p>4.setting.py 新增数据库Router<br><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">DATABASE_ROUTERS = (<span class="string">'multidb.PinningMasterSlaveRouter'</span>,)</span><br></pre></td></tr></table></figure></p>
+<p>重点在第4步，该Router的源码如下<br><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">MasterSlaveRouter</span><span class="params">(object)</span>:</span></span><br><span class="line">    <span class="string">"""Router that sends all reads to a slave, all writes to default."""</span></span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">db_for_read</span><span class="params">(self, model, **hints)</span>:</span></span><br><span class="line">        <span class="string">"""Send reads to slaves in round-robin."""</span></span><br><span class="line">        <span class="keyword">return</span> DEFAULT_DB_ALIAS <span class="keyword">if</span> this_thread_is_pinned() <span class="keyword">else</span> get_slave()</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">db_for_write</span><span class="params">(self, model, **hints)</span>:</span></span><br><span class="line">        <span class="string">"""Send all writes to the master."""</span></span><br><span class="line">        <span class="keyword">return</span> DEFAULT_DB_ALIAS</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">allow_relation</span><span class="params">(self, obj1, obj2, **hints)</span>:</span></span><br><span class="line">        <span class="string">"""Allow all relations, so FK validation stays quiet."""</span></span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">True</span></span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">allow_migrate</span><span class="params">(self, db, app_label, model_name=None, **hints)</span>:</span></span><br><span class="line">        <span class="keyword">return</span> db == DEFAULT_DB_ALIAS</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">allow_syncdb</span><span class="params">(self, db, model)</span>:</span></span><br><span class="line">        <span class="string">"""Only allow syncdb on the master."""</span></span><br><span class="line">        <span class="keyword">return</span> db == DEFAULT_DB_ALIAS</span><br></pre></td></tr></table></figure></p>
+<h2 id="大致说明一下"><a href="#大致说明一下" class="headerlink" title="大致说明一下"></a>大致说明一下</h2><p>1.数据库<strong>写入</strong>的时候，使用主库(默认default)<br>2.数据库<strong>读取</strong>的时候，判断该用户是否被标记过</p>
+<pre><code>- 如果没有标记过，按顺序从SLAVE_DATABASES中取出一个从库读取数据
+- 如果被标记过，则直接从主库读取数据
+</code></pre><h2 id="重点如下"><a href="#重点如下" class="headerlink" title="重点如下"></a>重点如下</h2><p>如果用户在指定时间内，有POST/PUT/DELET等请求，并且在这些请求中，通过python的<a href="https://docs.python.org/2/library/threading.html#threading.local" target="_blank" rel="noopener">threading.local</a>线程全局变量来标记该请求，<br>在发生数据库读取操作时，读取改变量的值，来判断是否读取主库</p>
+<p>同时防止用户在调用POST/PUT/DELET等请求后，立刻查看结果，在这些请求结束后，上面配置的中间件会向浏览器写入一个15s(可配置)的cookie,<br>如果用户在请求中包含该cookie，则认为该请求被标记过(pinned)，读取主库确保用户可以看到正确的执行结果</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="https://opai.me/2017/11/30/django数据库读写分离/" data-id="cjape0nm40000vmx1dwhh49sv" class="article-share-link">Teilen</a>
+      
+      
+  <ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/django/">django</a></li></ul>
+
+    </footer>
+  </div>
+  
+</article>
+
+
+  
+    <article id="post-hello-world" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2017/11/24/hello-world/" class="article-date">
+  <time datetime="2017-11-24T07:30:00.000Z" itemprop="datePublished">2017-11-24</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2017/11/24/hello-world/">Hello World</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>Welcome to <a href="https://hexo.io/" target="_blank" rel="noopener">Hexo</a>! This is your very first post. Check <a href="https://hexo.io/docs/" target="_blank" rel="noopener">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a href="https://hexo.io/docs/troubleshooting.html" target="_blank" rel="noopener">troubleshooting</a> or you can ask me on <a href="https://github.com/hexojs/hexo/issues" target="_blank" rel="noopener">GitHub</a>.</p>
+<h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">"My New Post"</span></span><br></pre></td></tr></table></figure>
+<p>More info: <a href="https://hexo.io/docs/writing.html" target="_blank" rel="noopener">Writing</a></p>
+<h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure>
+<p>More info: <a href="https://hexo.io/docs/server.html" target="_blank" rel="noopener">Server</a></p>
+<h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure>
+<p>More info: <a href="https://hexo.io/docs/generating.html" target="_blank" rel="noopener">Generating</a></p>
+<h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure>
+<p>More info: <a href="https://hexo.io/docs/deployment.html" target="_blank" rel="noopener">Deployment</a></p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="https://opai.me/2017/11/24/hello-world/" data-id="cjape0nm90001vmx1ey0aukzb" class="article-share-link">Teilen</a>
+      
+      
+    </footer>
+  </div>
+  
+</article>
+
+
+  
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list"><li class="tag-list-item"><a class="tag-list-link" href="/tags/django/">django</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/django/" style="font-size: 10px;">django</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archiv</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2017/11/">November 2017</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">letzter Beitrag</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2017/11/30/django数据库读写分离/">django mysql数据库读写分离</a>
+          </li>
+        
+          <li>
+            <a href="/2017/11/24/hello-world/">Hello World</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2017 opai.me<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+  <script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+<script src="/js/script.js"></script>
+
+
+
+  </div>
+</body>
+</html>
